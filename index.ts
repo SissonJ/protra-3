@@ -45,8 +45,7 @@ type PoolInfo = {
       token_code_hash: string,
     },
   }[],
-  amount_0: string,
-  amount_1: string,
+  [key: `amount_${number}`]: string,
 }
 
 config();
@@ -334,7 +333,6 @@ async function main() {
     ]
   }
 
-  console.log('Profit:', profit.toString(), input.toString());
   results.profit.push(profit.toNumber());
   if(results.profit.length > 100) {
     // Keep the last 100 for average calculation
