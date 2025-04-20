@@ -482,11 +482,13 @@ async function main() {
     );
   }
   if(executeResponse.code === 0) {
-    logger.info(`ATTEMPT SUCCESSFUL - ${executeResponse.transactionHash}`, now);
-    logger.info(JSON.stringify(executeResponse.jsonLog, null, 2), now);
+    logger.info(`ATTEMPT SUCCESSFUL - ${executeResponse.transactionHash} - Profit: ${
+      profit.toNumber()}`, now);
+    //logger.info(JSON.stringify(executeResponse.jsonLog, null, 2), now);
     results.successfulTxs += 1;
   } else {
-    logger.info(`ATTEMPT FAILED - ${executeResponse.transactionHash}`, now);
+    logger.info(`ATTEMPT FAILED - ${executeResponse.transactionHash} - Profit: ${
+      profit.toNumber()}`, now);
     logger.info(JSON.stringify(executeResponse.rawLog), now);
     results.failedTxs += 1;
     results.lastFailure = now.getTime();
