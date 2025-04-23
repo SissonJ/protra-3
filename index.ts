@@ -410,6 +410,8 @@ async function main() {
     results.profit.shift();
   }
 
+  console.log(profit);
+
   // If tx threshold is not met
   if(profit.lt(process.env.MINIMUM_PROFIT!)) {
     fs.writeFileSync('./results.txt', JSON.stringify(results, null, 2));
