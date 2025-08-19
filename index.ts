@@ -91,6 +91,7 @@ type Results = {
   successfulTxs: number,
   failedTxs: number,
   failedQueries: number,
+  lastBlockHeight: number,
 }
 
 type BatchQueryResponse = {
@@ -195,6 +196,7 @@ async function main() {
       failedTxs: 0,
       failedQueries: 0,
       lastFailure: 0,
+      lastBlockHeight: 0,
     };
     fs.writeFileSync(`./results.txt`, JSON.stringify(initialState));
   }
@@ -203,6 +205,15 @@ async function main() {
   const results: Results = JSON.parse(resultsUnparsed);
 
   const now = new Date();
+
+  const blockResponse = await client.query.tendermint.getLatestBlock({})
+  const blockHeight = blockResponse?.block?.header?.height;
+  if(blockHeight !== undefined && Number(blockHeight) !== results.lastBlockHeight) {
+    results.lastBlockHeight = Number(blockHeight);
+  } else {
+    return;
+  }
+
 
   if (results.start === undefined ||  now.getTime() - (results.lastUpdate ?? 0) > 3_600_000 * 2) {
     if(results.start === undefined) {
