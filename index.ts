@@ -1,11 +1,10 @@
 import { config } from 'dotenv';
-import {
-  MsgExecuteContract,
-  SecretNetworkClient,
-  Wallet, 
-} from 'secretjs';
 import * as fs from 'fs';
 import BigNumber from 'bignumber.js';
+import { ethers } from 'ethers';
+import poolAbi from './poolAbi.json';
+import { Pool } from '@uniswap/v3-sdk';
+import { Token } from '@uniswap/sdk-core';
 
 // Core CPMM swap function
 function cppm(
@@ -113,42 +112,34 @@ type PoolInfo = {
   pair: {
     custom_token: {
       contract_addr: string,
-      token_code_hash: string,
     },
   }[],
   [key: `amount_${number}`]: string,
+  pool: Pool,
 }
 
-config();
+config({ path: './.env.usdc-sei-wbtc' });
 
-if(!process.env.NODE 
-   || !process.env.CHAIN_ID
+if(!process.env.NODE_ADDRESS 
    || !process.env.PRIVATE_KEY
    || !process.env.WALLET_ADDRESS
-   || !process.env.BATCH_QUERY_CONTRACT
    || !process.env.POOL_0
    || !process.env.POOL_1
    || !process.env.POOL_2
-   || !process.env.MONEY_MARKET_ADDRESS
-   || !process.env.ROUTER_ADDRESS
    || !process.env.MINIMUM_PROFIT
    || !process.env.BORROW_AMOUNT
+   || !process.env.API_KEY
   ) {
+  console.log(process.env);
   throw new Error('Missing env variables are required in the .env file');
 }
 
-// Alows you to easly decrypt transacitons later
-const encryptionSeed = process.env.ENCRYPTION_SEED 
-  ? Uint8Array.from(process.env.ENCRYPTION_SEED!.split(',').map(Number)) 
-  : undefined;
+const provider = new ethers.JsonRpcProvider(`${process.env.NODE_ADDRESS}/${process.env.API_KEY}`);
+const wallet = ethers.Wallet.fromPhrase(process.env.PRIVATE_KEY, provider);
+const pool0Contract = new ethers.Contract(process.env.POOL_0!, poolAbi, provider);
+const pool1Contract = new ethers.Contract(process.env.POOL_1!, poolAbi, provider);
+const pool2Contract = new ethers.Contract(process.env.POOL_2!, poolAbi, provider);
 
-const client = new SecretNetworkClient({
-  url: process.env.NODE!,
-  chainId: process.env.CHAIN_ID!,
-  wallet: new Wallet(process.env.PRIVATE_KEY!),
-  walletAddress: process.env.WALLET_ADDRESS!,
-  encryptionSeed,
-});
 
 const encodeJsonToB64 = (toEncode:any) : string => Buffer.from(
   JSON.stringify(toEncode), 'utf8'
@@ -237,27 +228,29 @@ async function main() {
     return;
   }
 
-  const queryMsg = {
-    batch: {
-      queries: [0,1,2].map((i) => ({
-        id: encodeJsonToB64(`POOL_${i}`),
-        contract: {
-          address: process.env[`POOL_${i}`]!,
-          code_hash: process.env[`POOL_${i}_HASH`],
-        },
-        query: encodeJsonToB64({ get_pair_info: {}, }),
-      })),
-    }
-  };
-
   const beforeQuery = new Date().getTime();
   let queryResponse;
   try {
-    queryResponse = await client.query.compute.queryContract({
-      contract_address: process.env.BATCH_QUERY_CONTRACT!,
-      code_hash: process.env.BATCH_QUERY_HASH,
-      query: queryMsg,
-    }) as BatchQueryResponse;
+    queryResponse = await Promise.all([
+        pool0Contract.liquidity(),
+        pool0Contract.slot0(),
+        pool0Contract.token0(),
+        pool0Contract.token1(),
+        pool0Contract.fee(),
+        pool0Contract.ticks(),
+        pool1Contract.liquidity(),
+        pool1Contract.slot0(),
+        pool1Contract.token0(),
+        pool1Contract.token1(),
+        pool1Contract.fee(),
+        pool1Contract.ticks(),
+        pool2Contract.liquidity(),
+        pool2Contract.slot0(),
+        pool2Contract.token0(),
+        pool2Contract.token1(),
+        pool2Contract.fee(),
+        pool2Contract.ticks(),
+    ]);;
   } catch (e: any)  {
     fs.writeFileSync('./results.txt', JSON.stringify(results, null, 2));
     if(e.message.includes('invalid json response')) {
@@ -266,6 +259,7 @@ async function main() {
     }
     throw new Error(e);
   }
+
   if(queryResponse === undefined || queryResponse === null) {
     results.failedQueries += 1;
     fs.writeFileSync('./results.txt', JSON.stringify(results, null, 2));
@@ -278,20 +272,44 @@ async function main() {
     results.queryLength.shift();
   }
 
-  let pool0: PoolInfo | undefined;
-  let pool1: PoolInfo | undefined;
-  let pool2: PoolInfo | undefined;
-  queryResponse.batch.responses.forEach((query) => {
-    const queryData = decodeB64ToJson(query.response.response);
-    const queryKey = decodeB64ToJson(query.id);
-    if(queryKey === 'POOL_0') {
-      pool0 = queryData.get_pair_info;
-    } else if(queryKey === 'POOL_1') {
-      pool1 = queryData.get_pair_info;
-    } else if(queryKey === 'POOL_2') {
-      pool2 = queryData.get_pair_info;
-    }
-  });
+  console.log(queryResponse);
+  const poolInfos: PoolInfo[] = [];
+  for(let i = 0; i < 3; i++) {
+    const liquidity = queryResponse[i * 6 + 0].toString();
+    const sqrtX96 = queryResponse[i * 6 + 1][0];
+    const price = new BigNumber(sqrtX96).div(new BigNumber(2).pow(96));
+    const token0 = queryResponse[i * 6 + 2].toString();
+    const token1 = queryResponse[i * 6 + 3].toString();
+    const fee = queryResponse[i * 6 + 4];
+    const tick = queryResponse[i * 6 + 1][1];
+    const ticks = queryResponse[i * 6 + 5][1];
+    poolInfos.push({
+      pair: [
+        { custom_token: { contract_addr: token0 } },
+        { custom_token: { contract_addr: token1 } },
+      ],
+      amount_0: new BigNumber(liquidity).div(
+        price
+      ).toFixed(0),
+      amount_1: new BigNumber(liquidity).times(
+        price
+      ).toFixed(0),
+      pool: new Pool(
+        new Token(1329, token0, 6),
+        new Token(1329, token1, 18),
+        fee,
+        sqrtX96,
+        liquidity,
+        tick,
+        ticks,
+      ),
+    });
+  }
+
+  const pool0: PoolInfo = poolInfos[0];
+  const pool1: PoolInfo = poolInfos[1];
+  const pool2: PoolInfo = poolInfos[2];
+  console.log(pool0, pool1, pool2);
   const dir0: Record<string, BigNumber> = {};
   const dir1: Record<string, BigNumber> = {};
 
@@ -374,6 +392,9 @@ async function main() {
     dir1.base2, 
     fee
   );
+  console.log(dir0Profit.toNumber(), dir1Profit.toNumber());
+  console.log(JSON.stringify(pool0));
+  //console.log(cppm());
 
   let profit = dir1Profit;
   let input = dir1InputsCapped;
@@ -411,6 +432,7 @@ async function main() {
   }
 
   console.log(profit);
+  return;
 
   // If tx threshold is not met
   if(profit.lt(process.env.MINIMUM_PROFIT!)) {
