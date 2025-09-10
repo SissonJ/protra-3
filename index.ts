@@ -19,67 +19,69 @@ function cppm(
   return xOut.minus(feeAmount);
 }
 
-// Chained CPMM swap with 3 steps
-function cppm3(
+function cppm2(
   baseIn: BigNumber,
   base0: BigNumber,
   x0: BigNumber,
   fee0: BigNumber,
   x1: BigNumber,
-  y1: BigNumber,
+  base1: BigNumber,
   fee1: BigNumber,
-  y2: BigNumber,
-  base2: BigNumber,
-  fee2: BigNumber
 ): BigNumber {
   const xOut = cppm(baseIn, base0, x0, fee0);
-  const yOut = cppm(xOut, x1, y1, fee1);
-  const baseOut = cppm(yOut, y2, base2, fee2);
+  console.log('stkd',xOut.toString());
+  const baseOut = cppm(xOut, x1, base1, fee1);
+  console.log('usdc',baseOut.toString());
   return baseOut.minus(baseIn);
 }
 
 function computeBaseIn(
-  base0: BigNumber,
-  x0: BigNumber,
-  fee0: BigNumber,
-  x1: BigNumber,
-  y1: BigNumber,
-  fee1: BigNumber,
-  y2: BigNumber,
-  base2: BigNumber,
-  fee2: BigNumber
-): { baseIn1: BigNumber; baseIn2: BigNumber } {
-  const one = new BigNumber(1);
+  poolBuy1: BigNumber,
+  poolSell1: BigNumber,
+  poolBuy2: BigNumber,
+  poolSell2: BigNumber
+): BigNumber {
+  const pb1 = poolBuy1;
+  const ps1 = poolSell1;
+  const pb2 = poolBuy2;
+  const ps2 = poolSell2;
 
-  const term1 = base0.times(x1).times(y2);
+  const numerator = new BigNumber("9.380602724198101e-6").times(
+    new BigNumber("-1.06613651635e11").times(pb1).times(ps1).times(ps2)
+      .plus(new BigNumber("-1.06934455e11").times(ps1).times(ps2.pow(2)))
+      .plus(
+        new BigNumber("1.0660297422966704e8").times(
+          new BigNumber(
+            new BigNumber(994009)
+              .times(pb1.pow(3))
+              .times(ps1)
+              .times(pb2)
+              .times(ps2)
+              .plus(
+                new BigNumber("1.994e6")
+                  .times(pb1.pow(2))
+                  .times(ps1)
+                  .times(pb2)
+                  .times(ps2.pow(2))
+              )
+              .plus(
+                new BigNumber("1e6")
+                  .times(pb1)
+                  .times(ps1)
+                  .times(pb2)
+                  .times(ps2.pow(3))
+              )
+          ).sqrt()
+        )
+      )
+  );
 
-  const f = base0.times(base2).times(fee0).minus(base0.times(base2));
-  const f1 = f.times(fee1);
-  const f2 = f.minus(f1).times(fee2);
-  const sqrtNumerator = f.minus(f1).minus(f2)
-    .times(x0)
-    .times(x1)
-    .times(y1)
-    .times(y2)
-    .negated();
+  const denominator = new BigNumber(994009)
+    .times(pb1.pow(2))
+    .plus(new BigNumber("1.994e6").times(pb1).times(ps2))
+    .plus(new BigNumber("1e6").times(ps2.pow(2)));
 
-  const sqrtPart = sqrtNumerator.sqrt();
-
-  const denominator = fee0.minus(one)
-    .times(fee1)
-    .minus(fee0)
-    .plus(one)
-    .times(x0)
-    .times(y1)
-    .minus(fee0.minus(one).times(x0).minus(x1).times(y2));
-
-  const baseIn1 = term1.plus(sqrtPart).negated().div(denominator);
-  const baseIn2 = term1.minus(sqrtPart).negated().div(denominator);
-
-  return {
-   baseIn1, 
-   baseIn2 
-  };
+  return numerator.div(denominator);
 }
 
 type Results = {
@@ -119,9 +121,23 @@ type PoolInfo = {
   [key: `amount_${number}`]: string,
 }
 
-config();
+type AdmtPool = {
+  assets:{
+    info:{
+      token:{
+        contract_addr:string,
+        token_code_hash:string,
+        viewing_key:string,
+      },
+    },
+    amount:string,
+  }[],
+  total_share:string,
+}
 
-if(!process.env.NODE 
+config({ path: ['./.env', './.env.admtfi'] });
+
+if(!process.env.LCD_NODE 
    || !process.env.CHAIN_ID
    || !process.env.PRIVATE_KEY
    || !process.env.WALLET_ADDRESS
@@ -134,7 +150,7 @@ if(!process.env.NODE
    || !process.env.MINIMUM_PROFIT
    || !process.env.BORROW_AMOUNT
   ) {
-  throw new Error('Missing env variables are required in the .env file');
+  //throw new Error('Missing env variables are required in the .env file');
 }
 
 // Alows you to easly decrypt transacitons later
@@ -143,7 +159,7 @@ const encryptionSeed = process.env.ENCRYPTION_SEED
   : undefined;
 
 const client = new SecretNetworkClient({
-  url: process.env.NODE!,
+  url: process.env.LCD_NODE!,
   chainId: process.env.CHAIN_ID!,
   wallet: new Wallet(process.env.PRIVATE_KEY!),
   walletAddress: process.env.WALLET_ADDRESS!,
@@ -239,14 +255,57 @@ async function main() {
 
   const queryMsg = {
     batch: {
-      queries: [0,1,2].map((i) => ({
-        id: encodeJsonToB64(`POOL_${i}`),
+      queries: [{
+        id: encodeJsonToB64(`SHADESWAP_AMM`),
         contract: {
-          address: process.env[`POOL_${i}`]!,
-          code_hash: process.env[`POOL_${i}_HASH`],
+          address: process.env.SHADESWAP_AMM,
+          code_hash: process.env.SHADESWAP_AMM_HASH,
         },
         query: encodeJsonToB64({ get_pair_info: {}, }),
-      })),
+      },{
+        id: encodeJsonToB64(`ADMT_AMM`),
+        contract: {
+          address: process.env.ADMT_AMM,
+          code_hash: process.env.ADMT_AMM_HASH,
+        },
+        query: encodeJsonToB64({ pool: {}, }),
+      },{
+        id: encodeJsonToB64(`USDC_TO_SILK`),
+        contract: {
+          address: process.env.USDC_TO_SILK,
+          code_hash: process.env.USDC_TO_SILK_HASH,
+        },
+        query: encodeJsonToB64({
+         swap_simulation:{
+           offer:{
+            token:{
+             custom_token:{
+                  contract_addr:"secret1chsejpk9kfj4vt9ec6xvyguw539gsdtr775us2", 
+                  token_code_hash:"5a085bd8ed89de92b35134ddd12505a602c7759ea25fb5c089ba03c8535b3042"
+                } 
+              }, amount: "100000"
+            } 
+          } 
+        } ),
+      },{
+        id: encodeJsonToB64(`SDKT_TO_SCRT`),
+        contract: {
+          address: process.env.SDKT_TO_SCRT,
+          code_hash: process.env.SDKT_TO_SCRT_HASH,
+        },
+        query: encodeJsonToB64({
+         swap_simulation:{
+           offer:{
+            token:{
+             custom_token:{
+                  contract_addr:"secret1k6u0cy4feepm6pehnz804zmwakuwdapm69tuc4", 
+                  token_code_hash:"f6be719b3c6feb498d3554ca0398eb6b7e7db262acb33f84a8f12106da6bbb09"
+                } 
+              }, amount: "100000"
+            } 
+          } 
+        } ),
+      }],
     }
   };
 
@@ -279,23 +338,43 @@ async function main() {
   }
 
   let pool0: PoolInfo | undefined;
-  let pool1: PoolInfo | undefined;
-  let pool2: PoolInfo | undefined;
+  let pool1: AdmtPool | undefined;
+  let usdcToSilkRate: BigNumber | undefined;
+  let sdktToScrtRate: BigNumber | undefined;
+
   queryResponse.batch.responses.forEach((query) => {
     const queryData = decodeB64ToJson(query.response.response);
     const queryKey = decodeB64ToJson(query.id);
-    if(queryKey === 'POOL_0') {
+    console.log(queryKey, JSON.stringify(queryData));
+    if(queryKey === 'SHADESWAP_AMM') {
       pool0 = queryData.get_pair_info;
-    } else if(queryKey === 'POOL_1') {
-      pool1 = queryData.get_pair_info;
-    } else if(queryKey === 'POOL_2') {
-      pool2 = queryData.get_pair_info;
+    } else if(queryKey === 'ADMT_AMM') {
+      pool1 = queryData;
+    } else if(queryKey === 'USDC_TO_SILK') {
+      usdcToSilkRate = new BigNumber(queryData.swap_simulation.price);
+    } else if(queryKey === 'SDKT_TO_SCRT') {
+      sdktToScrtRate = new BigNumber(queryData.swap_simulation.price);
     }
   });
-  const dir0: Record<string, BigNumber> = {};
-  const dir1: Record<string, BigNumber> = {};
 
-  const pool2Tokens = pool2!.pair.reduce((prev: string[], curr) => {
+  const admtUsdc = new BigNumber(pool1!.assets.find((next) => next.info.token.contract_addr === process.env.USDC_ADDRESS)!.amount);
+  const admtSscrt = pool1!.assets.find((next) => next.info.token.contract_addr === process.env.SSCRT_ADDRESS);
+  const admtStkd = BigNumber(admtSscrt!.amount).div(sdktToScrtRate!);
+  
+  const addrArray = pool0!.pair.map((next) => next?.custom_token?.contract_addr);
+  const shadeswapStkdIndex = addrArray.indexOf(process.env.SDKT_ADDRESS!);
+  const shadeswapStkd = BigNumber(pool0![`amount_${shadeswapStkdIndex!}`]);
+  const shadeswapSilkIndxe = addrArray.indexOf(process.env.SILK_ADDRESS!);
+  const shadeswapUsdcAmount = BigNumber(pool0![`amount_${shadeswapSilkIndxe!}`] ).div(usdcToSilkRate!);
+
+  const dir0: Record<string, BigNumber> = {
+    usdc0: admtUsdc, 
+    stdk0: admtStkd,
+    usdc1: shadeswapUsdcAmount,
+    stdk1: shadeswapStkd,
+  };
+
+  /*const pool2Tokens = pool2!.pair.reduce((prev: string[], curr) => {
     if(curr.custom_token) {
       prev.push(curr.custom_token.contract_addr);
     }
@@ -333,82 +412,73 @@ async function main() {
   const y2Index = base2Index === 0 ? 1 : 0;
   const y2 = BigNumber(pool2![`amount_${y2Index}`]);
   dir0['y2'] = y2;
-  dir1['x0'] = y2;
+  dir1['x0'] = y2;*/
 
   const fee = BigNumber(0.003);
+  console.log('data', JSON.stringify(dir0));
 
   const dir0Inputs = BigNumber.max(
     1,
-    computeBaseIn(dir0.base0, dir0.x0, fee, dir0.x1, dir0.y1, fee, dir0.y2, dir0.base2, fee)
-      .baseIn2
+    computeBaseIn(dir0.stdk0, dir0.usdc0, dir0.usdc1, dir0.stdk1)
   );
   const dir1Inputs = BigNumber.max( 
     1,
-    computeBaseIn(dir1.base0, dir1.x0, fee, dir1.x1, dir1.y1, fee, dir1.y2, dir1.base2, fee)
-      .baseIn2
+    computeBaseIn(dir0.stdk1, dir0.usdc1, dir0.usdc0, dir0.stdk0)
   );
+  // TODO move to results
   const dir0InputsCapped = BigNumber.min(process.env.BORROW_AMOUNT!, dir0Inputs);
   const dir1InputsCapped = BigNumber.min(process.env.BORROW_AMOUNT!, dir1Inputs);
 
-  const dir0Profit = cppm3(
+  console.log('Inputs', dir0Inputs.toString(), dir1Inputs.toString());
+
+  const dir0Profit = cppm2(
     dir0InputsCapped, 
-    dir0.base0, 
-    dir0.x0, 
+    dir0.usdc0, 
+    dir0.stdk0, 
     fee, 
-    dir0.x1, 
-    dir0.y1, 
+    dir0.stdk1, 
+    dir0.usdc1, 
     fee, 
-    dir0.y2, 
-    dir0.base2, 
-    fee
   );
-  const dir1Profit = cppm3(
+  const dir1Profit = cppm2(
     dir1InputsCapped, 
-    dir1.base0, 
-    dir1.x0, 
+    dir0.usdc1, 
+    dir0.stdk1, 
     fee, 
-    dir1.x1, 
-    dir1.y1, 
+    dir0.stdk0, 
+    dir0.usdc0, 
     fee, 
-    dir1.y2, 
-    dir1.base2, 
-    fee
   );
+  console.log(dir0Profit.toString(), dir1Profit.toString());
 
   let profit = dir1Profit;
   let input = dir1InputsCapped;
   let path = [
     {
-     addr: process.env.POOL_2, code_hash: process.env.POOL_2_HASH 
+     addr: process.env.USDC_TO_SILK, code_hash: process.env.USDC_TO_SILK_HASH 
     },
     {
-     addr: process.env.POOL_1, code_hash: process.env.POOL_1_HASH 
+     addr: process.env.SHADESWAP_AMM, code_hash: process.env.SHADESWAP_AMM_HASH 
     },
     {
-     addr: process.env.POOL_0, code_hash: process.env.POOL_0_HASH 
+     addr: process.env.SDKT_TO_SCRT, code_hash: process.env.SDKT_TO_SCRT_HASH 
+    },
+    {
+     addr: process.env.ADMT_AMM, code_hash: process.env.ADMT_AMM_HASH, admt: true
     },
   ];
   if(dir0Profit.gt(dir1Profit)) {
+    console.log('HERE');
     profit = dir0Profit;
     input = dir0InputsCapped;
-    path = [
-      {
-       addr: process.env.POOL_0, code_hash: process.env.POOL_0_HASH 
-      },
-      {
-       addr: process.env.POOL_1, code_hash: process.env.POOL_1_HASH 
-      },
-      {
-       addr: process.env.POOL_2, code_hash: process.env.POOL_2_HASH 
-      },
-    ]
+    path = path.reverse();
   }
 
-  results.profit.push(profit.toNumber());
+  /*results.profit.push(profit.toNumber());
   if(results.profit.length > 100) {
     // Keep the last 100 for average calculation
     results.profit.shift();
-  }
+  }*/
 
   console.log(profit);
 
@@ -418,7 +488,8 @@ async function main() {
     return;
   }
 
-  const baseToken = pool0!.pair[base0Index].custom_token;
+  const baseToken = "secret1chsejpk9kfj4vt9ec6xvyguw539gsdtr775us2";
+  const baseTokenHash = "5a085bd8ed89de92b35134ddd12505a602c7759ea25fb5c089ba03c8535b3042";
 
   const msgs: MsgExecuteContract<any>[] = [
     new MsgExecuteContract({ 
@@ -427,7 +498,7 @@ async function main() {
       code_hash: process.env.MONEY_MARKET_CODE_HASH!,
       msg: { 
         borrow:{
-          token: baseToken.contract_addr, 
+          token: baseToken, 
           amount: input.toFixed(0), 
         } 
       }, 
@@ -435,12 +506,12 @@ async function main() {
     }),
     new MsgExecuteContract({
       sender: client.address, 
-      contract_address: baseToken.contract_addr,
-      code_hash: baseToken.token_code_hash,
+      contract_address: baseToken,
+      code_hash: baseTokenHash,
       msg: {
         send: {
-          recipient: process.env.ROUTER_ADDRESS!,
-          recipient_code_hash: process.env.ROUTER_CODE_HASH!,
+          recipient: process.env.ADMT_ROUTER!,
+          recipient_code_hash: process.env.ADMT_ROUTER_HASH!,
           amount: input.toFixed(0),
           msg: encodeJsonToB64({
             swap_tokens_for_exact:{
@@ -454,8 +525,8 @@ async function main() {
     }),
     new MsgExecuteContract({ 
       sender: client.address, 
-      contract_address: baseToken.contract_addr,
-      code_hash: baseToken.token_code_hash,
+      contract_address: baseToken,
+      code_hash: baseTokenHash,
       msg: {
         send: {
           recipient: process.env.MONEY_MARKET_ADDRESS!,
