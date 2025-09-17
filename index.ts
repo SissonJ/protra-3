@@ -87,6 +87,7 @@ type Results = {
   profit: number[],
   start?: number,
   lastUpdate?: number,
+  borrowAmount?: number,
   lastFailure: number,
   successfulTxs: number,
   failedTxs: number,
@@ -347,8 +348,8 @@ async function main() {
     computeBaseIn(dir1.base0, dir1.x0, fee, dir1.x1, dir1.y1, fee, dir1.y2, dir1.base2, fee)
       .baseIn2
   );
-  const dir0InputsCapped = BigNumber.min(process.env.BORROW_AMOUNT!, dir0Inputs);
-  const dir1InputsCapped = BigNumber.min(process.env.BORROW_AMOUNT!, dir1Inputs);
+  const dir0InputsCapped = BigNumber.min(results.borrowAmount ?? 0, dir0Inputs);
+  const dir1InputsCapped = BigNumber.min(results.borrowAmount ?? 0, dir1Inputs);
 
   const dir0Profit = cppm3(
     dir0InputsCapped, 
