@@ -133,7 +133,6 @@ if(!process.env.NODE
    || !process.env.MONEY_MARKET_ADDRESS
    || !process.env.ROUTER_ADDRESS
    || !process.env.MINIMUM_PROFIT
-   || !process.env.BORROW_AMOUNT
   ) {
   throw new Error('Missing env variables are required in the .env file');
 }
