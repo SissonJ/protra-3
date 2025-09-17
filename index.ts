@@ -318,6 +318,7 @@ async function main() {
       query: queryMsg,
     }) as BatchQueryResponse;
   } catch (e: any)  {
+    console.log(JSON.stringify(e));
     fs.writeFileSync('./results.txt', JSON.stringify(results, null, 2));
     if(e.message.includes('invalid json response')) {
       results.failedQueries += 1;
@@ -480,8 +481,9 @@ async function main() {
     results.profit.shift();
   }*/
 
-  console.log(profit);
+  console.log(profit, input);
 
+  return;
   // If tx threshold is not met
   if(profit.lt(process.env.MINIMUM_PROFIT!)) {
     fs.writeFileSync('./results.txt', JSON.stringify(results, null, 2));

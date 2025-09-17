@@ -2475,10 +2475,10 @@ safe-regex-test@^1.1.0:
     es-errors "^1.3.0"
     is-regex "^1.2.1"
 
-secretjs@^1.15.0:
-  version "1.15.1"
-  resolved "https://registry.yarnpkg.com/secretjs/-/secretjs-1.15.1.tgz#888419ad8fd60964f407cb1b58e8c3b7dcb4c7e7"
-  integrity sha512-/bl3k3hEcsYi3yqu1IBtsnLS2JMBcztCe38S/jRI7PI37mo/TxurHAG0GUoSaKGNUUR5wElqNYqaZB3WFgdsew==
+secretjs@^1.16.0:
+  version "1.21.2"
+  resolved "https://registry.yarnpkg.com/secretjs/-/secretjs-1.21.2.tgz#c9a0daee7212ae3308116dcede9fc304c5df7bd9"
+  integrity sha512-IGsjJnMSOShBFd1iwh0OCy19QQCdxwSBwDiAJ0KbNqAh2ryLU5bwo4V9MyvE7lJpfjfPjSy/csuQrf46rfxHIA==
   dependencies:
     "@cosmjs/amino" "^0.32.4"
     "@cosmjs/encoding" "0.32.3"

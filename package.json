@@ -22,7 +22,7 @@
     "bignumber.js": "^9.2.1",
     "dotenv": "^16.4.5",
     "eslint-plugin-import": "^2.31.0",
-    "secretjs": "^1.15.0",
+    "secretjs": "^1.16.0",
     "tsx": "^4.20.5"
   }
 }
